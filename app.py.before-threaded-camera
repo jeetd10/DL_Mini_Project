@@ -1,0 +1,523 @@
+import streamlit as st
+from ultralytics import YOLO
+from PIL import Image
+from collections import Counter
+from io import BytesIO
+import time
+import cv2
+import tempfile
+import os
+
+st.set_page_config(
+    page_title="SiteGuard AI | Safety Intelligence",
+    page_icon="🦺",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# ---------- EDITORIAL DESIGN SYSTEM ----------
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800;900&family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700;800&display=swap');
+:root { --ink:#101010; --paper:#f4f3ef; --orange:#ff5a00; --muted:#625e58; --line:#d9d6d0; --white:#ffffff; }
+html, body, [class*="css"] { font-family:'DM Sans',sans-serif; }
+.stApp { background:var(--paper); color:var(--ink); }
+[data-testid="stHeader"] { background:rgba(244,243,239,.98); }
+.block-container { max-width:1500px; padding:0 3.4rem 4rem; }
+#MainMenu, footer { visibility:hidden; }
+[data-testid="stSidebar"] { background:#151515; border-right:1px solid #292929; }
+[data-testid="stSidebar"] * { color:#f4f3ef !important; }
+.topline { box-sizing:border-box; position:relative; z-index:10; isolation:isolate; width:100%; min-height:92px; height:auto; border-bottom:1px solid var(--line); padding:1.25rem 0 1.35rem; margin:0 0 2.4rem; display:flex; align-items:center; justify-content:space-between; gap:1rem; overflow:visible; line-height:normal; background:#f4f3ef; }
+/* Robust header logo styles: prevent clipping, inherited light text, or decoration. */
+.stApp .stMarkdown .topline .brand, .stApp .topline .brand { display:flex !important; align-items:center !important; flex:0 0 auto !important; min-height:42px; height:auto !important; box-sizing:border-box; position:relative; z-index:11; font-family:'DM Sans',sans-serif !important; font-size:1.65rem !important; font-weight:900 !important; letter-spacing:-1.2px !important; line-height:1.25 !important; padding:5px 0 !important; margin:0 !important; color:#101010 !important; -webkit-text-fill-color:#101010 !important; text-decoration:none !important; text-shadow:none !important; opacity:1 !important; visibility:visible !important; overflow:visible !important; clip-path:none !important; white-space:nowrap; }
+.stApp .topline .brand span { color:#ff5a00 !important; -webkit-text-fill-color:#ff5a00 !important; }
+.stApp .stMarkdown .topline .status, .stApp .topline .status { display:inline-flex !important; align-items:center; position:relative; z-index:11; flex:0 0 auto; min-height:38px; box-sizing:border-box; color:#101010 !important; -webkit-text-fill-color:#101010 !important; background:#fffaf6 !important; font:500 11px 'DM Mono',monospace; line-height:1.4; letter-spacing:1px; text-transform:uppercase; border:1px solid #ff5a00; padding:9px 13px; border-radius:30px; opacity:1 !important; visibility:visible !important; white-space:nowrap; }
+.status i { display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--orange); margin-right:7px; }
+.hero-grid { display:grid; grid-template-columns:.9fr 1.1fr; min-height:460px; align-items:stretch; border-bottom:1px solid var(--line); }
+.hero-copy { padding:2.5rem 2rem 2.8rem 0; display:flex; flex-direction:column; align-items:flex-start; justify-content:center; }
+.kicker,.section-kicker { font:500 11px 'DM Mono',monospace; letter-spacing:1.7px; text-transform:uppercase; color:var(--orange) !important; margin:1.6rem 0 .5rem; }
+.hero-title { font:800 clamp(3.5rem,7vw,7rem)/.88 'Barlow Condensed',sans-serif; letter-spacing:-3px; text-transform:uppercase; margin:0 0 1.6rem; color:var(--ink) !important; }
+.hero-title span { color:var(--orange) !important; display:block; }
+.hero-sub { font-size:1.12rem; line-height:1.5; max-width:380px; color:#45423e !important; margin-bottom:1.7rem; }
+.hero-art { background:#171717; min-height:420px; position:relative; overflow:hidden; display:flex; align-items:stretch; }
+.hero-art img { width:100%; height:100%; object-fit:cover; opacity:.88; }
+.art-overlay { position:absolute; inset:0; background:linear-gradient(90deg,rgba(10,10,10,.05),rgba(10,10,10,.12)); pointer-events:none; }
+.art-tag { position:absolute; border:1px solid var(--orange); color:#fff !important; background:rgba(15,15,15,.88); font:500 11px 'DM Mono',monospace; padding:8px 10px; letter-spacing:.5px; }
+.art-tag.one { top:24%; right:7%; } .art-tag.two { bottom:23%; right:7%; }
+.feature-row { display:grid; grid-template-columns:repeat(3,1fr); border-bottom:1px solid var(--line); margin-bottom:2.8rem; }
+.feature { padding:1.5rem 1.3rem 1.7rem 0; border-right:1px solid var(--line); }
+.feature:not(:first-child) { padding-left:1.7rem; } .feature:last-child { border-right:0; }
+.feature-num { font:500 12px 'DM Mono',monospace; color:var(--orange) !important; letter-spacing:1px; }
+.feature-label { font:800 clamp(1.5rem,2.5vw,2.4rem)/1 'Barlow Condensed',sans-serif; text-transform:uppercase; margin-top:1.1rem; color:var(--ink) !important; }
+.section-heading { font:800 clamp(2rem,4vw,3.6rem)/.98 'Barlow Condensed',sans-serif; text-transform:uppercase; letter-spacing:-.7px; margin:0 0 1.3rem; color:var(--ink) !important; }
+.panel,.metric-card { background:#fff; color:var(--ink); border:1px solid var(--line); border-radius:0; padding:1.3rem; }
+.panel h3,.panel p,.panel li { color:var(--ink) !important; }
+.metric-label { font:500 10px 'DM Mono',monospace; color:#625e58 !important; letter-spacing:1px; text-transform:uppercase; }
+.metric-value { font:800 2.4rem/1 'Barlow Condensed',sans-serif; color:var(--orange) !important; margin-top:.65rem; }
+.small-note { font:400 11px 'DM Mono',monospace; color:#625e58 !important; }
+/* Buttons: consistent high-contrast light text on orange/black. */
+div.stButton > button, div.stDownloadButton > button { background:var(--orange) !important; color:#fff !important; border:1px solid var(--orange) !important; border-radius:0 !important; padding:.8rem 1.2rem; min-height:46px; font:700 11px 'DM Mono',monospace; letter-spacing:.7px; text-transform:uppercase; }
+div.stButton > button *, div.stDownloadButton > button * { color:#fff !important; }
+div.stButton > button:hover, div.stDownloadButton > button:hover { background:#101010 !important; color:#fff !important; border-color:#101010 !important; }
+/* Upload widget: keep the dropzone light and every label/button readable. */
+[data-testid="stFileUploader"] { background:#fff !important; color:#101010 !important; border:1px solid var(--line) !important; padding:1rem !important; }
+[data-testid="stFileUploader"] *, [data-testid="stFileUploaderDropzone"] * { color:#101010 !important; opacity:1 !important; }
+[data-testid="stFileUploaderDropzone"] { background:#f8f7f4 !important; border:1px dashed #8c877f !important; }
+[data-testid="stFileUploaderDropzone"] button { background:#101010 !important; color:#fff !important; border:1px solid #101010 !important; }
+[data-testid="stFileUploaderDropzone"] button * { color:#fff !important; }
+[data-testid="stFileUploader"] small { color:#625e58 !important; }
+/* Navigation radio buttons */
+.stRadio > div { gap:.45rem; }
+.stRadio label { border:1px solid var(--line) !important; padding:.55rem .8rem; border-radius:0 !important; background:#f4f3ef !important; }
+.stRadio label p,.stRadio label span,.stRadio label div { color:#101010 !important; opacity:1 !important; font:500 11px 'DM Mono',monospace; letter-spacing:.4px; text-transform:uppercase; }
+.stRadio label:has(input:checked) { background:#fff0e8 !important; border-color:var(--orange) !important; }
+.stRadio input { accent-color:var(--orange) !important; }
+/* Streamlit labels, captions, tables, charts and expanders */
+.stApp h1,.stApp h2,.stApp h3,.stApp h4,.stApp p,.stApp li,
+[data-testid="stWidgetLabel"] p,[data-testid="stExpander"] summary,
+[data-testid="stExpander"] summary p,[data-testid="stSlider"] label,
+[data-testid="stCaptionContainer"],[data-testid="stCaptionContainer"] p { color:#101010; }
+.stApp [data-testid="stCaptionContainer"] p,.stApp .stCaption { color:#625e58 !important; }
+[data-testid="stMetric"] { background:#fff !important; border:1px solid var(--line) !important; padding:1rem !important; border-radius:0 !important; }
+[data-testid="stMetricLabel"], [data-testid="stMetricLabel"] * { color:#625e58 !important; }
+[data-testid="stMetricValue"], [data-testid="stMetricValue"] * { color:var(--orange) !important; }
+.stApp input,.stApp textarea { color:#101010 !important; background:#fff !important; }
+.stApp [data-baseweb="select"] * { color:#101010 !important; }
+[data-testid="stAlert"] { color:#101010 !important; }
+[data-testid="stDataFrame"] * { color:#101010; }
+hr { border-color:var(--line); }
+@media(max-width:850px){ .block-container{padding:0 1rem 2rem;} .hero-grid{grid-template-columns:1fr;} .hero-art{min-height:280px;} .hero-copy{padding:1rem 0 2rem;} .hero-title{font-size:4.5rem;} .feature-row{grid-template-columns:1fr;} .feature,.feature:not(:first-child){padding:1rem 0;border-right:0;border-bottom:1px solid var(--line);} }
+</style>
+""", unsafe_allow_html=True)
+
+# ---------- MODEL AND SESSION DATA ----------
+@st.cache_resource
+def load_model():
+    """Load the trained model from the project-relative weights path."""
+    model_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models", "best.pt")
+    if not os.path.isfile(model_path):
+        raise FileNotFoundError(
+            "Model weights were not found at models/best.pt. Add your trained best.pt file "
+            "to a models/ folder beside app.py before starting SiteGuard AI."
+        )
+    return YOLO(model_path)
+
+
+# ---------- TOP NAVIGATION ----------
+nav_options = ["Platform", "Image Analysis", "Video Analysis", "Live Cameras"]
+if "nav_page" not in st.session_state:
+    st.session_state["nav_page"] = "Platform"
+if st.session_state.get("target_page") in nav_options:
+    st.session_state["nav_page"] = st.session_state.pop("target_page")
+
+st.markdown("""
+<div class="topline">
+  <div class="brand">SITEGUARD<span>.</span></div>
+  <div class="status"><i></i> MODEL WORKSPACE</div>
+</div>
+""", unsafe_allow_html=True)
+page = st.radio("Navigate", nav_options, horizontal=True, label_visibility="collapsed", key="nav_page")
+with st.expander("DETECTION SETTINGS · confidence threshold", expanded=False):
+    confidence = st.slider("Confidence threshold", 0.1, 0.9, 0.4, 0.05)
+    st.caption("Higher confidence filters out weaker detections. Inference runs locally using your trained YOLO weights.")
+
+if page == "Platform":
+    st.markdown("""
+    <div class="hero-grid">
+      <div class="hero-copy">
+        <div class="kicker">COMPUTER VISION / CONSTRUCTION SAFETY</div>
+        <h1 class="hero-title">Safety is <span>not a guess.</span></h1>
+        <p class="hero-sub">Computer vision for safer construction sites. Detect protective equipment, flag potential risks, and turn visual data into actionable reports.</p>
+      </div>
+      <div class="hero-art">
+        <img src="https://images.unsplash.com/photo-1504307651254-35680f356dfd?auto=format&fit=crop&w=1500&q=85" alt="Construction site" />
+        <div class="art-overlay"></div>
+        <div class="art-tag one">PPE DETECTION / LIVE MODEL</div>
+        <div class="art-tag two">YOLO · COMPUTER VISION</div>
+      </div>
+    </div>
+    <div class="feature-row">
+      <div class="feature"><div class="feature-num">01 / DETECT</div><div class="feature-label">10 object classes</div></div>
+      <div class="feature"><div class="feature-num">02 / VERIFY</div><div class="feature-label">Image + video</div></div>
+      <div class="feature"><div class="feature-num">03 / REPORT</div><div class="feature-label">Exportable insights</div></div>
+    </div>
+    <div class="section-kicker">THE WORKFLOW</div>
+    <div class="section-heading">From site footage to safety insight.</div>
+    """, unsafe_allow_html=True)
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown('<div class="panel"><div class="section-kicker">01 / IMAGE</div><h3>Inspect a site photo</h3><p>Upload an image and review detected PPE, objects, and potential missing-equipment indicators.</p></div>', unsafe_allow_html=True)
+        if st.button("ANALYZE IMAGE ↗", width="stretch"):
+            st.session_state["target_page"] = "Image Analysis"
+            st.rerun()
+    with c2:
+        st.markdown('<div class="panel"><div class="section-kicker">02 / VIDEO</div><h3>Inspect site footage</h3><p>Analyze video frame by frame and export an annotated result for review.</p></div>', unsafe_allow_html=True)
+        if st.button("ANALYZE VIDEO ↗", width="stretch"):
+            st.session_state["target_page"] = "Video Analysis"
+            st.rerun()
+    st.markdown('<p class="small-note">SITEGUARD / LOCAL INFERENCE WORKSPACE · MODEL OUTPUTS REQUIRE HUMAN REVIEW</p>', unsafe_allow_html=True)
+
+
+# ---------- IMAGE ANALYSIS ----------
+elif page == "Image Analysis":
+    st.markdown('<div class="section-kicker">01 / PLATFORM</div><div class="section-heading">Image inspection.</div>', unsafe_allow_html=True)
+    uploaded_file = st.file_uploader(
+        "Upload an image for inspection", type=["jpg", "jpeg", "png"],
+        help="Choose a construction-site image.", key="image_upload"
+    )
+
+    if uploaded_file:
+        try:
+            image = Image.open(uploaded_file).convert("RGB")
+        except Exception:
+            st.error("This image could not be opened. Please upload a valid JPG or PNG image.")
+            st.stop()
+        st.markdown(
+            f'<div class="small-note">FILE: {uploaded_file.name} · RESOLUTION: {image.width} × {image.height}</div>',
+            unsafe_allow_html=True
+        )
+        if st.button("⚡ ANALYZE IMAGE", width="stretch"):
+            start = time.perf_counter()
+            with st.spinner("Analyzing image with YOLO..."):
+                result = load_model().predict(
+    frame,
+    conf=confidence,
+    imgsz=416,
+    verbose=False
+)[0]
+                annotated = Image.fromarray(result.plot()[:, :, ::-1])
+                counts = Counter(result.names[int(box.cls[0])] for box in result.boxes)
+                elapsed = time.perf_counter() - start
+            st.session_state["analysis"] = {
+                "annotated": annotated, "counts": dict(counts), "elapsed": elapsed,
+                "filename": uploaded_file.name, "image_bytes": uploaded_file.getvalue()
+            }
+
+    if "analysis" in st.session_state:
+        data = st.session_state["analysis"]
+        counts = data["counts"]
+        total = sum(counts.values())
+        unique = len(counts)
+        st.markdown('<div class="section-title">02 / Inspection overview</div>', unsafe_allow_html=True)
+        m1, m2, m3 = st.columns(3)
+        m1.markdown(f'<div class="metric-card"><div class="metric-label">OBJECTS DETECTED</div><div class="metric-value">{total}</div></div>', unsafe_allow_html=True)
+        m2.markdown(f'<div class="metric-card"><div class="metric-label">CLASSES FOUND</div><div class="metric-value">{unique}</div></div>', unsafe_allow_html=True)
+        m3.markdown(f'<div class="metric-card"><div class="metric-label">INFERENCE TIME</div><div class="metric-value">{data["elapsed"]:.2f}s</div></div>', unsafe_allow_html=True)
+
+        st.markdown('<div class="section-title">03 / Visual comparison</div>', unsafe_allow_html=True)
+        original_col, result_col = st.columns(2)
+        with original_col:
+            st.markdown("**Original image**")
+            st.image(Image.open(BytesIO(data["image_bytes"])).convert("RGB"), width="stretch")
+        with result_col:
+            st.markdown("**AI detection output**")
+            st.image(data["annotated"], width="stretch")
+
+        st.markdown('<div class="section-title">04 / PPE detection indicators</div>', unsafe_allow_html=True)
+        lower_counts = {name.lower(): count for name, count in counts.items()}
+        p1, p2, p3, p4 = st.columns(4)
+        p1.metric("Hardhat detections", lower_counts.get("hardhat", 0))
+        p2.metric("Safety vest detections", lower_counts.get("safety vest", 0))
+        p3.metric("NO-Hardhat indicators", lower_counts.get("no-hardhat", 0))
+        p4.metric("NO-Safety Vest indicators", lower_counts.get("no-safety vest", 0))
+        if lower_counts.get("no-hardhat", 0) or lower_counts.get("no-safety vest", 0):
+            st.warning("Potential missing-PPE indicators detected. Review the image manually.")
+        else:
+            st.info("No missing-PPE classes were detected in this image. This does not prove all workers are compliant.")
+
+        st.markdown('<div class="section-title">05 / Detection breakdown</div>', unsafe_allow_html=True)
+        if counts:
+            st.bar_chart({"Class": list(counts.keys()), "Detections": list(counts.values())}, x="Class", y="Detections")
+            cols = st.columns(min(len(counts), 4))
+            for i, (name, count) in enumerate(counts.items()):
+                with cols[i % len(cols)]:
+                    st.metric(name, count)
+        else:
+            st.warning("No objects detected. Try lowering the confidence threshold.")
+
+        buffer = BytesIO()
+        data["annotated"].save(buffer, format="JPEG")
+        st.download_button("⬇ Download annotated image", data=buffer.getvalue(), file_name="siteguard_detection.jpg", mime="image/jpeg", width="stretch")
+        st.caption("Detections are model predictions, not a certified workplace safety assessment.")
+    else:
+        st.markdown("""
+        <div class="panel">
+            <h3 style="color:#F8FAFC;">Ready for inspection</h3>
+            <p style="color:#A9B8CC;">Upload a construction-site image and run an analysis.
+            Bounding boxes, class counts and PPE indicators will appear here.</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+
+# ---------- VIDEO ANALYSIS ----------
+elif page == "Video Analysis":
+    st.markdown('<div class="section-kicker">02 / PLATFORM</div><div class="section-heading">Video inspection.</div>', unsafe_allow_html=True)
+    st.write("Upload a construction-site video for frame-by-frame detection.")
+    uploaded_video = st.file_uploader("Upload video", type=["mp4", "mov", "avi"], key="video_upload")
+
+    if uploaded_video is not None:
+        st.video(uploaded_video)
+        if st.button("Analyze Video", width="stretch"):
+            input_path = output_path = None
+            cap = writer = None
+            try:
+                model = load_model()
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_input:
+                    temp_input.write(uploaded_video.getvalue())
+                    input_path = temp_input.name
+                cap = cv2.VideoCapture(input_path)
+                if not cap.isOpened():
+                    st.error("Could not open this video.")
+                else:
+                    fps = cap.get(cv2.CAP_PROP_FPS)
+                    fps = fps if fps > 0 else 25.0
+                    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+                    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                    if width <= 0 or height <= 0:
+                        st.error("Invalid video dimensions.")
+                    else:
+                        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_output:
+                            output_path = temp_output.name
+                        writer = cv2.VideoWriter(output_path, cv2.VideoWriter_fourcc(*"mp4v"), fps, (width, height))
+                        if not writer.isOpened():
+                            st.error("Could not create output video.")
+                        else:
+                            progress = st.progress(0)
+                            status = st.empty()
+                            class_counts = Counter()
+                            frame_count = 0
+                            while True:
+                                success, frame = cap.read()
+                                if not success:
+                                    break
+                                result = model.predict(frame, conf=confidence, verbose=False)[0]
+                                writer.write(result.plot())
+                                for box in result.boxes:
+                                    class_counts[result.names[int(box.cls[0])]] += 1
+                                frame_count += 1
+                                if total_frames > 0:
+                                    progress.progress(min(frame_count / total_frames, 1.0))
+                                if frame_count % 10 == 0:
+                                    status.write(f"Processed {frame_count} frames...")
+                            writer.release()
+                            writer = None
+                            cap.release()
+                            cap = None
+                            if frame_count > 0 and os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+                                with open(output_path, "rb") as video_file:
+                                    st.session_state["video_result"] = video_file.read()
+                                st.session_state["video_classes"] = sorted(class_counts.keys())
+                                st.session_state["video_counts"] = dict(class_counts)
+                                st.session_state["video_filename"] = uploaded_video.name
+                                st.success(f"Analysis complete: {frame_count} frames processed.")
+                            else:
+                                st.error("No video frames could be processed.")
+            except Exception as e:
+                st.error(f"Video analysis failed: {e}")
+            finally:
+                if writer is not None:
+                    writer.release()
+                if cap is not None:
+                    cap.release()
+                if input_path and os.path.exists(input_path):
+                    os.remove(input_path)
+                if output_path and os.path.exists(output_path):
+                    os.remove(output_path)
+
+    if "video_result" in st.session_state:
+        st.markdown("#### Annotated video")
+        st.video(st.session_state["video_result"])
+        st.download_button("Download annotated video", data=st.session_state["video_result"], file_name="siteguard_annotated.mp4", mime="video/mp4")
+        video_counts = st.session_state.get("video_counts", {})
+        if video_counts:
+            st.markdown("#### PPE detection indicators across processed frames")
+            p1, p2, p3, p4 = st.columns(4)
+            p1.metric("Hardhat detections", video_counts.get("Hardhat", 0))
+            p2.metric("Safety vest detections", video_counts.get("Safety Vest", 0))
+            p3.metric("NO-Hardhat indicators", video_counts.get("NO-Hardhat", 0))
+            p4.metric("NO-Safety Vest indicators", video_counts.get("NO-Safety Vest", 0))
+            if video_counts.get("NO-Hardhat", 0) or video_counts.get("NO-Safety Vest", 0):
+                st.warning("Potential missing-PPE indicators were detected in video frames. Review the footage manually.")
+            st.caption("Counts are detections across frames, not unique workers.")
+
+
+
+# ---------- LIVE CAMERA MONITORING ----------
+elif page == "Live Cameras":
+    from streamlit_autorefresh import st_autorefresh
+
+    st.markdown(
+        '<div class="section-kicker">03 / PLATFORM</div>'
+        '<div class="section-heading">Live camera monitoring.</div>',
+        unsafe_allow_html=True
+    )
+    st.write(
+        "Connect a phone-camera app or IP camera that provides an "
+        "HTTP/MJPEG or RTSP stream. Detection runs locally on this Mac."
+    )
+
+    st.info(
+        "Start the camera server in your phone app first. Copy its actual "
+        "stream URL below. Your phone and Mac must be able to reach each other."
+    )
+
+    with st.form("live_camera_connection"):
+        camera_url = st.text_input(
+            "Camera stream URL",
+            value=st.session_state.get("camera_url", ""),
+            placeholder="http://192.168.1.25:8080/video",
+            help="Use the exact URL shown by your camera app. "
+                 "RTSP URLs may start with rtsp://."
+        )
+        connect_camera = st.form_submit_button(
+            "CONNECT CAMERA",
+            width="stretch"
+        )
+
+    if connect_camera:
+        old_cap = st.session_state.get("live_camera_capture")
+        if old_cap is not None:
+            old_cap.release()
+
+        st.session_state["live_camera_capture"] = None
+        st.session_state["live_camera_active"] = False
+        url = camera_url.strip()
+
+        if not url.startswith(("http://", "https://", "rtsp://")):
+            st.error("Enter a valid HTTP, HTTPS, or RTSP stream URL.")
+        else:
+            with st.spinner("Connecting to camera..."):
+                cap = cv2.VideoCapture(url)
+                cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+
+                if cap.isOpened():
+                    ok, test_frame = cap.read()
+                    if ok and test_frame is not None:
+                        st.session_state["camera_url"] = url
+                        st.session_state["live_camera_capture"] = cap
+                        st.session_state["live_camera_active"] = True
+                        st.rerun()
+                    else:
+                        cap.release()
+                        st.error(
+                            "The stream opened but no frame arrived. "
+                            "Check the URL and camera app settings."
+                        )
+                else:
+                    cap.release()
+                    st.error(
+                        "Could not connect. Confirm the stream URL, "
+                        "camera app, Wi-Fi, and stream permissions."
+                    )
+
+    active = st.session_state.get("live_camera_active", False)
+    cap = st.session_state.get("live_camera_capture")
+
+    if active and cap is not None:
+        stop_camera = st.button(
+            "STOP CAMERA",
+            width="stretch",
+            key="stop_live_camera"
+        )
+
+        if stop_camera:
+            cap.release()
+            st.session_state["live_camera_capture"] = None
+            st.session_state["live_camera_active"] = False
+            st.rerun()
+
+        # Refresh the page regularly so new frames are processed.
+        st_autorefresh(interval=500, key="live_camera_refresh")
+
+        ok, frame = cap.read()
+        if ok and frame is not None:
+            try:
+                model = load_model()
+                result = model.predict(
+                    frame,
+                    conf=confidence,
+                    verbose=False
+                )[0]
+
+                annotated = result.plot()
+                annotated_rgb = cv2.cvtColor(
+                    annotated, cv2.COLOR_BGR2RGB
+                )
+
+                st.markdown("#### Live detection feed")
+                st.image(annotated_rgb, width="stretch")
+
+                frame_counts = Counter(
+                    result.names[int(box.cls[0])]
+                    for box in result.boxes
+                )
+                total_detections = sum(frame_counts.values())
+
+                m1, m2 = st.columns(2)
+                m1.metric("Objects in current frame", total_detections)
+                m2.metric("Classes in current frame", len(frame_counts))
+
+                normalized = {
+                    " ".join(name.lower().replace("_", " ").split()): count
+                    for name, count in frame_counts.items()
+                }
+
+                missing_items = {
+                    name: count for name, count in frame_counts.items()
+                    if any(term in name.lower().replace("_", " ")
+                           for term in ("no-hardhat", "no hardhat",
+                                        "no-safety vest", "no safety vest",
+                                        "no-mask", "no mask"))
+                }
+
+                if missing_items:
+                    st.warning(
+                        "Potential missing-PPE indicators: "
+                        + ", ".join(
+                            f"{name} ({count})"
+                            for name, count in missing_items.items()
+                        )
+                    )
+                else:
+                    st.success(
+                        "No missing-PPE classes detected in this frame. "
+                        "This does not prove all workers are compliant."
+                    )
+
+                if frame_counts:
+                    st.markdown("#### Current-frame detections")
+                    st.dataframe(
+                        [
+                            {"Class": name, "Detections": count}
+                            for name, count in frame_counts.items()
+                        ],
+                        hide_index=True,
+                        width="stretch"
+                    )
+                else:
+                    st.caption(
+                        "No objects detected in this frame. "
+                        "Try adjusting the confidence threshold."
+                    )
+
+                st.caption(
+                    "Counts describe this frame, not unique workers. "
+                    "AI predictions require human review."
+                )
+
+            except Exception as exc:
+                st.error(f"Live detection failed: {exc}")
+        else:
+            st.warning(
+                "No frame received. The stream may have disconnected. "
+                "Check the camera app or reconnect."
+            )
+
+    else:
+        st.markdown(
+            '<div class="panel"><h3>Camera not connected</h3>'
+            '<p>Start your phone camera stream, enter its URL, '
+            'and select CONNECT CAMERA.</p></div>',
+            unsafe_allow_html=True
+        )
